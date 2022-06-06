@@ -1,0 +1,130 @@
+name: Go
+on: [push]
+jobs:
+  staticcheck:
+    name: "Static check"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Go 1.17
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.17
+        id: go
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v2
+      - name: Get dependencies
+        run: |
+          export GOPATH=$(go env GOPATH)
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          make depend
+      - name: go generate
+        run: |
+          export GOPATH=$(go env GOPATH)
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          go generate ./...
+      - name: run staticcheck
+        run: |
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          go get honnef.co/go/tools/cmd/staticcheck
+          ./.github/workflows/static-check.sh
+
+  errcheck:
+    name: "Err Check"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Go 1.17
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.17
+        id: go
+
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v2
+
+      - name: Get dependencies
+        run: |
+          export GOPATH=$(go env GOPATH)
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          make depend
+      - name: go generate
+        run: |
+          export GOPATH=$(go env GOPATH)
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          go generate ./...
+      - name: Install errcheck
+        run: go get -u github.com/kisielk/errcheck
+      - name: run errcheck
+        run: ./.github/workflows/err-check.sh
+
+  tests:
+    name: Run tests (with full coverages)
+    runs-on: ubuntu-latest
+    env:
+      CC_TEST_REPORTER_ID: ${{ secrets.CC_TEST_REPORTER_ID }}
+    steps:
+      - name: Set up Go 1.17
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.17
+        id: go
+
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v1
+
+      - name: Install codeclimate
+        run: |
+          wget --no-clobber https://codeclimate.com/downloads/test-reporter/test-reporter-latest-linux-amd64 --output-document cc-test-reporter
+          chmod +x cc-test-reporter
+
+      - name: Tell codeclimate we're starting
+        run: ./cc-test-reporter before-build
+
+      - name: Cache downloaded Go modules
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/go/pkg/mod
+          key: "${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}"
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install coverage
+        run: go get golang.org/x/tools/cmd/cover
+
+      - name: Install gotestsum
+        run: |
+          cd /tmp/
+          wget https://github.com/gotestyourself/gotestsum/releases/download/v1.7.0/gotestsum_1.7.0_linux_amd64.tar.gz
+          tar -vzxf gotestsum_1.7.0_linux_amd64.tar.gz
+          mkdir -p "$(go env GOPATH)/bin"
+          mv ./gotestsum "$(go env GOPATH)/bin/gotestsum"
+          cd -
+
+      - name: Place symlink in $HOME/go to our git clone location
+        run: mkdir -p $HOME/go/src/github.com/AnimationMentor/ && ln -s $HOME/work/art-go-artelladata/art-go-artelladata $HOME/go/src/github.com/AnimationMentor/
+
+      - name: Get dependencies
+        run: make depend
+
+      - name: go generate
+        run: make generate
+
+      - name: Test (with coverage)
+        run: |
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          gotestsum --junitfile test_unit_output.xml -- ./... -cover -coverprofile test.cov
+
+      - name: Send coverage to codeclimate
+        run: |
+          P="github.com/AnimationMentor/go-oidc"
+          ./cc-test-reporter env
+          ./cc-test-reporter format-coverage -t gocov -o "codeclimate.json" --prefix "${P}" "test.cov"
+          ./cc-test-reporter upload-coverage -i codeclimate.json
+
+      - name: Publish Unit Test Results
+        uses: EnricoMi/publish-unit-test-result-action@v1
+        if: always()
+        with:
+          files: test_*_output.xml

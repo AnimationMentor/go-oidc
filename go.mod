@@ -12,6 +12,7 @@ require (
 
 require (
 	github.com/golang/protobuf v1.4.2 // indirect
+	github.com/google/go-cmp v0.5.5 // indirect
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9 // indirect
 	google.golang.org/appengine v1.6.6 // indirect
 	google.golang.org/protobuf v1.25.0 // indirect
